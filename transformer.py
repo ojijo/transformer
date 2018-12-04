@@ -38,4 +38,36 @@ class Generator(nn.Module):
         self.proj = nn.Linear(d_model, vocab)
 
     def forward(self, x):
-        return F.log_softmax(self.proj(x), dim=-1)
+        return F.log_softmax(self.proj(x), dim=-1)  
+
+def clones(module, N):
+    "Produce N identical layers."
+    return nn.ModuleList([copy.deepcopy(module) for _ in range(N)]) #拷贝n份，返回模块列表
+
+class Encoder(nn.Module):
+    "Core encoder is a stack of N layers"
+    def __init__(self, layer, N):
+        super(Encoder, self).__init__()
+        self.layers = clones(layer, N)  #编码器是由n个相同层叠加而成        
+        self.norm = LayerNorm(layer.size) #初始化归一化功能
+        
+    def forward(self, x, mask):
+        "Pass the input (and mask) through each layer in turn."
+        for layer in self.layers:
+            x = layer(x, mask)  #顺序通过n层（掩码可选）
+        return self.norm(x) #最后归一化
+
+class LayerNorm(nn.Module):
+    "Construct a layernorm module (See citation for details)."
+    def __init__(self, features, eps=1e-6):
+        super(LayerNorm, self).__init__()
+        self.a_2 = nn.Parameter(torch.ones(features))
+        self.b_2 = nn.Parameter(torch.zeros(features))
+        self.eps = eps
+
+    def forward(self, x):
+        mean = x.mean(-1, keepdim=True) #最后一维平均值
+        std = x.std(-1, keepdim=True)   #最后一维的标准差
+        return self.a_2 * (x - mean) / (std + self.eps) + self.b_2 # （x 减去平均值）/标注差。 得到sigma倍数 
+
+
