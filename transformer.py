@@ -139,11 +139,13 @@ def subsequent_mask(size):
     subsequent_mask = np.triu(np.ones(attn_shape), k=1).astype('uint8') #triu : upper triangle
     return torch.from_numpy(subsequent_mask) == 0
 
-
+#conv1d, con2d最后一维都是不合并的，图像里是颜色的几个通道，语言里是不同的属性。是不能简单合并的。
+#做矩阵乘法可以相乘的前提是前面的列数等于后面的行数，前后编码维度相同比如都是512,后面转置后就可以相乘。
 
 def attention(query, key, value, mask=None, dropout=None):
     "Compute 'Scaled Dot Product Attention'"
     d_k = query.size(-1)
+    #矩阵的点乘，就是每个行向量与后面每个列向量的点乘[得到一个标量]，也是矩阵乘法的定义
     scores = torch.matmul(query, key.transpose(-2, -1)) \
              / math.sqrt(d_k)
     if mask is not None:
