@@ -146,14 +146,18 @@ def attention(query, key, value, mask=None, dropout=None):
     "Compute 'Scaled Dot Product Attention'"
     d_k = query.size(-1)
     #矩阵的点乘，就是每个行向量与后面每个列向量的点乘[得到一个标量]，也是矩阵乘法的定义
+    #得到的行数=q的行数，列数=k的行数
     scores = torch.matmul(query, key.transpose(-2, -1)) \
              / math.sqrt(d_k)
+    #掩码，除去不需要的
     if mask is not None:
         scores = scores.masked_fill(mask == 0, -1e9)
     p_attn = F.softmax(scores, dim = -1)
     if dropout is not None:
         p_attn = dropout(p_attn)
-    return torch.matmul(p_attn, value), p_attn
+    #因为列数（key的行数）= 行数（value的行数）所以可以乘，
+    #返回：行数=q的行数，列数=embedding的列数    
+    return torch.matmul(p_attn, value), p_attn  
 
 class MultiHeadedAttention(nn.Module):
     def __init__(self, h, d_model, dropout=0.1):
@@ -163,7 +167,7 @@ class MultiHeadedAttention(nn.Module):
         # We assume d_v always equals d_k
         self.d_k = d_model // h
         self.h = h
-        self.linears = clones(nn.Linear(d_model, d_model), 4)
+        self.linears = clones(nn.Linear(d_model, d_model), 4) #分成多个header时，可以包含维度4倍的信息，用全连接学习
         self.attn = None
         self.dropout = nn.Dropout(p=dropout)
         
@@ -171,10 +175,13 @@ class MultiHeadedAttention(nn.Module):
         "Implements Figure 2"
         if mask is not None:
             # Same mask applied to all h heads.
-            mask = mask.unsqueeze(1)
+            #"比如：[batch,q,k] 变为 [batch,1,q,k],在[batch,h,q,k]上运行mask对每个head都是一样的"
+            mask = mask.unsqueeze(1)    
         nbatches = query.size(0)
         
         # 1) Do all the linear projections in batch from d_model => h x d_k 
+        #zip 把前3个linear函数对应到query, key, value
+        #view -1就代表这个位置由其他位置的数字来推断。 view是行优先，在一起的优先整理
         query, key, value = \
             [l(x).view(nbatches, -1, self.h, self.d_k).transpose(1, 2)
              for l, x in zip(self.linears, (query, key, value))]
@@ -183,8 +190,9 @@ class MultiHeadedAttention(nn.Module):
         x, self.attn = attention(query, key, value, mask=mask, 
                                  dropout=self.dropout)
         
-        # 3) "Concat" using a view and apply a final linear. 
+        # 3) "Concat" using a view and apply a final linear
+        #最后一个linear在这里使用 
         x = x.transpose(1, 2).contiguous() \
              .view(nbatches, -1, self.h * self.d_k)
-        return self.linears[-1](x)
+        return self.linears[-1](x)   #最后输出是 [batch,q,emb]
     
