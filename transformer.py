@@ -98,8 +98,8 @@ class EncoderLayer(nn.Module):
 
     def forward(self, x, mask):
         "Follow Figure 1 (left) for connections."
-        x = self.sublayer[0](x, lambda x: self.self_attn(x, x, x, mask))  #第一个子层attention
-        return self.sublayer[1](x, self.feed_forward)   #第二个子层，全连接
+        x = self.sublayer[0](x, lambda x: self.self_attn(x, x, x, mask))  #第一个子层attention #输出是q size,刚好和k v size相同，内容在传递
+        return self.sublayer[1](x, self.feed_forward)   #第二个子层，全连接 
     
 
 class Decoder(nn.Module):
@@ -128,9 +128,9 @@ class DecoderLayer(nn.Module):
     def forward(self, x, memory, src_mask, tgt_mask):
         "Follow Figure 1 (right) for connections."
         m = memory
-        x = self.sublayer[0](x, lambda x: self.self_attn(x, x, x, tgt_mask))
-        x = self.sublayer[1](x, lambda x: self.src_attn(x, m, m, src_mask)) #中间还加了src-attention子子子层
-        return self.sublayer[2](x, self.feed_forward)
+        x = self.sublayer[0](x, lambda x: self.self_attn(x, x, x, tgt_mask)) #输出是q size,指针在传递
+        x = self.sublayer[1](x, lambda x: self.src_attn(x, m, m, src_mask)) #中间还加了src-attention子子子层 
+        return self.sublayer[2](x, self.feed_forward) 
 
 #decoder的输入是掩模的，防止之后的输出作为之前的输入
 def subsequent_mask(size):
@@ -196,7 +196,8 @@ class MultiHeadedAttention(nn.Module):
              .view(nbatches, -1, self.h * self.d_k)
         return self.linears[-1](x)   #最后输出是 [batch,q,emb]
 
-#全连接注意力;门槛泛化、节能
+#全连接注意力;门槛、泛化、节能
+#可以看作是kernel size = input size, stride=1 的CNN
 class PositionwiseFeedForward(nn.Module):
     "Implements FFN equation."
     def __init__(self, d_model, d_ff, dropout=0.1):
@@ -207,3 +208,43 @@ class PositionwiseFeedForward(nn.Module):
 
     def forward(self, x):
         return self.w_2(self.dropout(F.relu(self.w_1(x))))
+
+
+class Embeddings(nn.Module):
+    def __init__(self, d_model, vocab):
+        super(Embeddings, self).__init__()
+        self.lut = nn.Embedding(vocab, d_model) #词数，嵌入维数
+        self.d_model = d_model
+
+    def forward(self, x):
+        return self.lut(x) * math.sqrt(self.d_model) #归一化
+
+#加入位置编码信息    
+class PositionalEncoding(nn.Module):
+    "Implement the PE function."
+    def __init__(self, d_model, dropout, max_len=5000):
+        super(PositionalEncoding, self).__init__()
+        self.dropout = nn.Dropout(p=dropout)
+        
+        # Compute the positional encodings once in log space.
+        pe = torch.zeros(max_len, d_model)
+#         position = torch.arange(0, max_len).unsqueeze(1)
+#         ep = torch.arange(0, d_model, 2) * -(math.log(10000.0) / d_model)
+#         div_term = torch.exp(ep)
+        position = torch.arange(0, max_len).unsqueeze(1)
+        a = -(math.log(10000.0) / d_model)
+        arr = torch.arange(0, d_model, 2.) * a
+        div_term = torch.exp(arr.float())
+        #所有奇数列=sin, 偶数列=cos
+        pe[:, 0::2] = torch.sin(position * div_term)
+        pe[:, 1::2] = torch.cos(position * div_term)
+        pe = pe.unsqueeze(0)
+        self.register_buffer('pe', pe)
+        
+    def forward(self, x):
+        x = x + Variable(self.pe[:, :x.size(1)], 
+                         requires_grad=False)
+        return self.dropout(x)
+
+pe = PositionalEncoding(512, 0.1, max_len= 200)
+print(len(pe))
