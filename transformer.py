@@ -219,7 +219,7 @@ class Embeddings(nn.Module):
     def forward(self, x):
         return self.lut(x) * math.sqrt(self.d_model) #归一化
 
-#加入位置编码信息    
+#加入位置编码信息，给512维每个维一个周期函数，给max_len=5000，每个词一个512为位置    
 class PositionalEncoding(nn.Module):
     "Implement the PE function."
     def __init__(self, d_model, dropout, max_len=5000):
@@ -228,23 +228,45 @@ class PositionalEncoding(nn.Module):
         
         # Compute the positional encodings once in log space.
         pe = torch.zeros(max_len, d_model)
-#         position = torch.arange(0, max_len).unsqueeze(1)
-#         ep = torch.arange(0, d_model, 2) * -(math.log(10000.0) / d_model)
-#         div_term = torch.exp(ep)
         position = torch.arange(0, max_len).unsqueeze(1)
-        a = -(math.log(10000.0) / d_model)
-        arr = torch.arange(0, d_model, 2.) * a
-        div_term = torch.exp(arr.float())
+#         a = -(math.log(10000.0) / d_model)
+#         arr = torch.arange(0, d_model, 2.) * a
+#         div_term = torch.exp(arr)        
+        div_term = torch.exp(torch.arange(0, d_model, 2.) * -(math.log(10000.0) / d_model))
         #所有奇数列=sin, 偶数列=cos
-        pe[:, 0::2] = torch.sin(position * div_term)
-        pe[:, 1::2] = torch.cos(position * div_term)
+        pe[:, 0::2] = torch.sin(position.float() * div_term)
+        pe[:, 1::2] = torch.cos(position.float() * div_term)
         pe = pe.unsqueeze(0)
-        self.register_buffer('pe', pe)
+        self.register_buffer('pe', pe) #保存为常量 
         
     def forward(self, x):
         x = x + Variable(self.pe[:, :x.size(1)], 
                          requires_grad=False)
         return self.dropout(x)
 
-pe = PositionalEncoding(512, 0.1, max_len= 200)
-print(len(pe))
+# pe = PositionalEncoding(512, 0.1, max_len= 200)
+# print(len(pe))
+
+def make_model(src_vocab, tgt_vocab, N=6, 
+               d_model=512, d_ff=2048, h=8, dropout=0.1):
+    "Helper: Construct a model from hyperparameters."
+    c = copy.deepcopy
+    attn = MultiHeadedAttention(h, d_model)
+    ff = PositionwiseFeedForward(d_model, d_ff, dropout)
+    position = PositionalEncoding(d_model, dropout)
+    model = EncoderDecoder(
+        Encoder(EncoderLayer(d_model, c(attn), c(ff), dropout), N),
+        Decoder(DecoderLayer(d_model, c(attn), c(attn), 
+                             c(ff), dropout), N),
+        nn.Sequential(Embeddings(d_model, src_vocab), c(position)),
+        nn.Sequential(Embeddings(d_model, tgt_vocab), c(position)),
+        Generator(d_model, tgt_vocab))
+    
+    # This was important from their code. 
+    # Initialize parameters with Glorot / fan_avg.
+    for p in model.parameters():
+        if p.dim() > 1:
+            nn.init.xavier_uniform(p)
+    return model
+
+tmp_model = make_model(10, 10, 2)
