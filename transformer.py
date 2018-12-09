@@ -384,7 +384,7 @@ class LabelSmoothing(nn.Module):
         true_dist.scatter_(1, target.data.unsqueeze(1), self.confidence)
         true_dist[:, self.padding_idx] = 0
         mask = torch.nonzero(target.data == self.padding_idx)
-        if mask.dim() > 0:
+        if mask.dim() > 0 and mask.shape[0]>0:
             true_dist.index_fill_(0, mask.squeeze(), 0.0)
         self.true_dist = true_dist
         return self.criterion(x, Variable(true_dist, requires_grad=False))
@@ -397,7 +397,7 @@ class LabelSmoothing(nn.Module):
 #                              [0, 0.2, 0.7, 0.1, 0]])
 # v = crit(Variable(predict.log()), 
 #          Variable(torch.LongTensor([2, 1, 0])))
-# 
+#  
 # # Show the target distributions expected by the system.
 # plt.imshow(crit.true_dist)
 # None
@@ -445,7 +445,7 @@ criterion = LabelSmoothing(size=V, padding_idx=0, smoothing=0.0)
 model = make_model(V, V, N=2)
 model_opt = NoamOpt(model.src_embed[0].d_model, 1, 400,
         torch.optim.Adam(model.parameters(), lr=0, betas=(0.9, 0.98), eps=1e-9))
-
+  
 for epoch in range(10):
     model.train()
     run_epoch(data_gen(V, 30, 20), model, 
