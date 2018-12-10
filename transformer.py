@@ -307,13 +307,19 @@ def run_epoch(data_iter, model, loss_compute):
         total_loss += loss
         total_tokens += batch.ntokens
         tokens += batch.ntokens
+        
         if i % 50 == 1:
             elapsed = time.time() - start
-            print("Epoch Step: %d Loss: %f Tokens per Sec: %f" %
-                    (i, loss / batch.ntokens, tokens / elapsed))
+            print("batch " + str(i))
+            print("loss " + str(loss))
+            print("batch.ntokens " + str(batch.ntokens.float()))
+            print("tokens " + str(tokens))
+            print("elapsed " + str(elapsed))
+#             print("Epoch Step: %d Loss: %f Tokens per Sec: %f" %
+#                     (i, loss / batch.ntokens.float(), tokens / elapsed))
             start = time.time()
             tokens = 0
-    return total_loss / total_tokens
+    return total_loss / total_tokens.float()
 
 
 global max_src_in_batch, max_tgt_in_batch
@@ -432,12 +438,12 @@ class SimpleLossCompute:
     def __call__(self, x, y, norm):
         x = self.generator(x)
         loss = self.criterion(x.contiguous().view(-1, x.size(-1)), 
-                              y.contiguous().view(-1)) / norm
+                              y.contiguous().view(-1)) / norm.float()
         loss.backward()
         if self.opt is not None:
             self.opt.step()
             self.opt.optimizer.zero_grad()
-        return loss.data[0] * norm
+        return loss.item() * (norm.float())
 
 # Train the simple copy task.
 V = 11
@@ -445,13 +451,22 @@ criterion = LabelSmoothing(size=V, padding_idx=0, smoothing=0.0)
 model = make_model(V, V, N=2)
 model_opt = NoamOpt(model.src_embed[0].d_model, 1, 400,
         torch.optim.Adam(model.parameters(), lr=0, betas=(0.9, 0.98), eps=1e-9))
-  
-for epoch in range(10):
+     
+for epoch in range(20):
     model.train()
+    print("epoch " + str(epoch))
+    print("do train")
     run_epoch(data_gen(V, 30, 20), model, 
               SimpleLossCompute(model.generator, criterion, model_opt))
     model.eval()
+    print("do eval")    
     print(run_epoch(data_gen(V, 30, 5), model, 
                     SimpleLossCompute(model.generator, criterion, None)))
+    
+    print()
+
+
+
+
 
 
